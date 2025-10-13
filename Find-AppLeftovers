@@ -1,0 +1,109 @@
+# App Leftover Finder - Finds leftover files from uninstalled applications
+# Run this script as Administrator for best results
+
+Write-Host "=== App Leftover Finder ===" -ForegroundColor Cyan
+Write-Host "Scanning for leftovers from uninstalled applications...`n" -ForegroundColor Yellow
+
+# Get list of installed applications
+Write-Host "[1/4] Getting list of installed applications..." -ForegroundColor Green
+
+$installedApps = @()
+
+# Check Registry for installed programs (64-bit)
+$installedApps += Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue | 
+    Select-Object DisplayName, Publisher | Where-Object { $_.DisplayName }
+
+# Check Registry for installed programs (32-bit on 64-bit systems)
+$installedApps += Get-ItemProperty "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue | 
+    Select-Object DisplayName, Publisher | Where-Object { $_.DisplayName }
+
+# Check user-specific installations
+$installedApps += Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue | 
+    Select-Object DisplayName, Publisher | Where-Object { $_.DisplayName }
+
+# Get Windows Store apps
+$installedApps += Get-AppxPackage | Select-Object @{Name="DisplayName";Expression={$_.Name}}, @{Name="Publisher";Expression={$_.Publisher}}
+
+# Create a list of installed app names (normalized)
+$installedNames = $installedApps | ForEach-Object { 
+    if ($_.DisplayName) { 
+        $_.DisplayName.ToLower().Trim() -replace '[^a-z0-9]', '' 
+    }
+} | Select-Object -Unique
+
+Write-Host "Found $($installedNames.Count) installed applications`n" -ForegroundColor White
+
+# Scan AppData folders
+$appDataLocal = "$env:LOCALAPPDATA"
+$appDataRoaming = "$env:APPDATA"
+
+Write-Host "[2/4] Scanning AppData\Local..." -ForegroundColor Green
+$localFolders = Get-ChildItem -Path $appDataLocal -Directory -ErrorAction SilentlyContinue
+
+Write-Host "[3/4] Scanning AppData\Roaming..." -ForegroundColor Green
+$roamingFolders = Get-ChildItem -Path $appDataRoaming -Directory -ErrorAction SilentlyContinue
+
+# Combine all folders
+$allFolders = @()
+$allFolders += $localFolders | Select-Object Name, FullName, @{Name="Location";Expression={"Local"}}
+$allFolders += $roamingFolders | Select-Object Name, FullName, @{Name="Location";Expression={"Roaming"}}
+
+Write-Host "[4/4] Analyzing folders for leftovers...`n" -ForegroundColor Green
+
+# Find potential leftovers
+$leftovers = @()
+
+foreach ($folder in $allFolders) {
+    $folderNameNormalized = $folder.Name.ToLower().Trim() -replace '[^a-z0-9]', ''
+    
+    # Check if folder name matches any installed app
+    $isInstalled = $false
+    foreach ($appName in $installedNames) {
+        if ($folderNameNormalized -like "*$appName*" -or $appName -like "*$folderNameNormalized*") {
+            $isInstalled = $true
+            break
+        }
+    }
+    
+    if (-not $isInstalled) {
+        # Calculate folder size
+        $size = (Get-ChildItem -Path $folder.FullName -Recurse -File -ErrorAction SilentlyContinue | 
+                 Measure-Object -Property Length -Sum).Sum
+        
+        $sizeMB = [math]::Round($size / 1MB, 2)
+        
+        $leftovers += [PSCustomObject]@{
+            FolderName = $folder.Name
+            Location = $folder.Location
+            Path = $folder.FullName
+            SizeMB = $sizeMB
+        }
+    }
+}
+
+# Display results
+Write-Host "=== POTENTIAL LEFTOVERS FOUND ===" -ForegroundColor Cyan
+Write-Host "Total folders analyzed: $($allFolders.Count)" -ForegroundColor White
+Write-Host "Potential leftovers: $($leftovers.Count)`n" -ForegroundColor Yellow
+
+if ($leftovers.Count -gt 0) {
+    # Sort by size (largest first)
+    $leftovers = $leftovers | Sort-Object -Property SizeMB -Descending
+    
+    $leftovers | Format-Table -AutoSize FolderName, Location, SizeMB, Path
+    
+    $totalSize = ($leftovers | Measure-Object -Property SizeMB -Sum).Sum
+    Write-Host "`nTotal space used by potential leftovers: $([math]::Round($totalSize, 2)) MB`n" -ForegroundColor Yellow
+    
+    Write-Host "`n=== IMPORTANT ===" -ForegroundColor Red
+    Write-Host "This script identifies POTENTIAL leftovers. Some folders may be:" -ForegroundColor Yellow
+    Write-Host "- Used by currently installed apps with different names" -ForegroundColor Yellow
+    Write-Host "- System folders that shouldn't be deleted" -ForegroundColor Yellow
+    Write-Host "- Shared data used by multiple applications" -ForegroundColor Yellow
+    Write-Host "`nReview carefully before deleting anything!" -ForegroundColor Red
+} else {
+    Write-Host "No obvious leftovers found!" -ForegroundColor Green
+}
+
+Write-Host "`nPress any key to exit..."
+$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
