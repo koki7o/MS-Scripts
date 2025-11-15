@@ -15,7 +15,10 @@ This PowerShell script:
 - Provides safe recommendations (manual review required)
 
 2. Restart Faulty Devices
-   
+Detects and restarts non-working devices on Windows
+
+This script identifies devices with errors and attempts to fix them
+by disabling and then re-enabling the device.
 
 **Note:** Always review results carefully before deleting anything. Some folders 
 may be shared resources or system components.
