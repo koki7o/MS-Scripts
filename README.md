@@ -1,5 +1,6 @@
-# AppData Cleaner
+# Different Windows Maintenance Scripts:
 
+1. AppData Cleaner
 Find and identify leftover application data on Windows that's wasting disk space.
 
 When you uninstall applications on Windows, many leave behind folders in 
@@ -12,6 +13,9 @@ This PowerShell script:
 - Identifies potential leftovers from uninstalled apps
 - Shows folder sizes to help prioritize cleanup
 - Provides safe recommendations (manual review required)
+
+2. Restart Faulty Devices
+   
 
 **Note:** Always review results carefully before deleting anything. Some folders 
 may be shared resources or system components.
